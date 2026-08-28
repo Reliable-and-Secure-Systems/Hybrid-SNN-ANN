@@ -6,6 +6,10 @@ from data.atm_dataset import load_atm_dataset
 from encoding.atm_encoder import encode_atm_sample
 from models.atm_hybrid_model import ATMHybridSNNANN
 from models.event_selector import EventSelector
+from split_computing.quantization import (
+    quantize_tensor,
+    dequantize_tensor
+)
 
 
 TIME_STEPS = 20
@@ -20,12 +24,16 @@ TOP_K_VALUES = [
     10
 ]
 
+PRECISION_VALUES = [
+    None,
+    16,
+    8,
+    4
+]
+
 INPUT_SIZE = 128
+ORIGINAL_BITS = INPUT_SIZE * 32
 
-
-# =========================================================
-# Load dataset
-# =========================================================
 
 X, y = load_atm_dataset()
 
@@ -39,10 +47,6 @@ train_indices, test_indices = train_test_split(
 )
 
 
-# =========================================================
-# Load trained model
-# =========================================================
-
 model = ATMHybridSNNANN()
 
 model.load_state_dict(
@@ -54,10 +58,6 @@ model.load_state_dict(
 
 model.eval()
 
-
-# =========================================================
-# Generate SNN representation
-# =========================================================
 
 def get_snn_features(sample):
 
@@ -100,91 +100,136 @@ def get_snn_features(sample):
     return features
 
 
-# =========================================================
-# Evaluate each compression level
-# =========================================================
+def apply_quantization(features, bits):
 
-print("=" * 75)
-print("COMPRESSION vs ACCURACY EXPERIMENT")
-print("=" * 75)
+    if bits is None:
+        return features
+
+    quantized, scale = quantize_tensor(
+        features,
+        bits
+    )
+
+    reconstructed = dequantize_tensor(
+        quantized,
+        scale
+    )
+
+    return reconstructed
+
+
+print("=" * 90)
+print("COMPRESSION vs QUANTISATION vs ACCURACY")
+print("=" * 90)
 
 print(
+    f"{'Precision':>10} | "
     f"{'Features':>10} | "
-    f"{'Reduction':>12} | "
+    f"{'Feature Red.':>12} | {'Bit Red.':>10} | "
     f"{'Correct':>8} | "
     f"{'Accuracy':>10}"
 )
 
-print("-" * 75)
+print("-" * 90)
 
 
-for top_k in TOP_K_VALUES:
+for bits in PRECISION_VALUES:
 
-    selector = EventSelector(
-        top_k=top_k
+    precision_name = (
+        "FP32" if bits is None
+        else f"INT{bits}"
     )
 
-    correct = 0
+    for top_k in TOP_K_VALUES:
 
-    for index in test_indices:
-
-        sample = X[index]
-
-        true_label = y[index]
-
-        features = get_snn_features(
-            sample
+        selector = EventSelector(
+            top_k=top_k
         )
 
-        with torch.no_grad():
+        correct = 0
 
-            values, indices_selected, _ = selector(
-                features
+        for index in test_indices:
+
+            sample = X[index]
+
+            true_label = y[index]
+
+
+            features = get_snn_features(
+                sample
             )
 
-        # Reconstruct representation
-        reconstructed = torch.zeros(
-            1,
-            INPUT_SIZE
-        )
 
-        reconstructed.scatter_(
-            1,
-            indices_selected,
-            values
-        )
+            with torch.no_grad():
 
-        # ANN
-        with torch.no_grad():
+                values, indices_selected, _ = selector(
+                    features
+                )
 
-            output = model.ann(
-                reconstructed
+
+            values = apply_quantization(
+                values,
+                bits
             )
 
-            prediction = output.argmax(
-                dim=1
-            ).item()
 
-        if prediction == true_label:
-            correct += 1
+            reconstructed = torch.zeros(
+                1,
+                INPUT_SIZE
+            )
 
-    accuracy = (
-        100 *
-        correct /
-        len(test_indices)
-    )
+            reconstructed.scatter_(
+                1,
+                indices_selected,
+                values
+            )
 
-    reduction = (
-        1 -
-        top_k / INPUT_SIZE
-    ) * 100
+            with torch.no_grad():
 
-    print(
-        f"{top_k:>10} | "
-        f"{reduction:>11.2f}% | "
-        f"{correct:>5}/{len(test_indices)} | "
-        f"{accuracy:>9.2f}%"
-    )
+                output = model.ann(
+                    reconstructed
+                )
+
+                prediction = output.argmax(
+                    dim=1
+                ).item()
+
+            if prediction == true_label:
+                correct += 1
+
+        accuracy = (
+            100 *
+            correct /
+            len(test_indices)
+        )
+
+        feature_reduction = (
+            1 -
+            top_k / INPUT_SIZE
+        ) * 100
+
+        bits_per_value = (
+            32 if bits is None else bits
+        )
+
+        transmitted_bits = (
+            top_k *
+            bits_per_value
+        )
+
+        bit_reduction = (
+            1 -
+            transmitted_bits / ORIGINAL_BITS
+        ) * 100
+
+        print(
+            f"{precision_name:>10} | "
+            f"{top_k:>10} | "
+            f"{feature_reduction:>11.2f}% | "
+            f"{bit_reduction:>9.2f}% | "
+            f"{correct:>5}/{len(test_indices)} | "
+            f"{accuracy:>9.2f}%"
+        )
 
 
-print("=" * 75)
+print("=" * 90)

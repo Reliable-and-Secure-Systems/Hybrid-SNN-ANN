@@ -4,16 +4,17 @@ from data.atm_dataset import load_atm_dataset
 from encoding.atm_encoder import encode_atm_sample
 from models.atm_hybrid_model import ATMHybridSNNANN
 from models.event_selector import EventSelector
+from split_computing.quantization import (
+    quantize_tensor,
+    dequantize_tensor
+)
 
 
 TIME_STEPS = 20
 TOP_K = 20
+QUANTIZATION_BITS = 8
 INPUT_SIZE = 128
 
-
-# =========================================================
-# Load trained model
-# =========================================================
 
 model = ATMHybridSNNANN()
 
@@ -27,16 +28,9 @@ model.load_state_dict(
 model.eval()
 
 
-# =========================================================
-# Load ATM dataset
-# =========================================================
-
 X, y = load_atm_dataset()
 
 
-# =========================================================
-# Edge: SNN
-# =========================================================
 
 def edge_snn(sample):
 
@@ -79,10 +73,6 @@ def edge_snn(sample):
     return snn_features
 
 
-# =========================================================
-# Event Selection
-# =========================================================
-
 selector = EventSelector(
     top_k=TOP_K
 )
@@ -99,9 +89,27 @@ def select_events(features):
     return values, indices, active
 
 
-# =========================================================
-# Server: reconstruct compressed data
-# =========================================================
+def quantize_events(values):
+
+    quantized, scale = quantize_tensor(
+        values,
+        QUANTIZATION_BITS
+    )
+
+    return quantized, scale
+
+
+
+def dequantize_events(
+    quantized_values,
+    scale
+):
+
+    return dequantize_tensor(
+        quantized_values,
+        scale
+    )
+
 
 def reconstruct_features(
     values,
@@ -122,10 +130,6 @@ def reconstruct_features(
     return reconstructed
 
 
-# =========================================================
-# Server: ANN
-# =========================================================
-
 def server_ann(features):
 
     with torch.no_grad():
@@ -141,10 +145,6 @@ def server_ann(features):
     return prediction, output
 
 
-# =========================================================
-# Run one sample
-# =========================================================
-
 sample_index = 0
 
 sample = X[sample_index]
@@ -152,14 +152,11 @@ sample = X[sample_index]
 true_label = y[sample_index]
 
 
-print("=" * 70)
+print("=" * 75)
 print("END-TO-END SPLIT COMPUTING")
-print("=" * 70)
+print("=" * 75)
 
 
-# -------------------------
-# Edge
-# -------------------------
 
 snn_features = edge_snn(sample)
 
@@ -167,10 +164,6 @@ print("\nEDGE DEVICE")
 print("Original ATM shape :", sample.shape)
 print("SNN features       :", snn_features.shape)
 
-
-# -------------------------
-# Event selection
-# -------------------------
 
 selected_values, selected_indices, active = select_events(
     snn_features
@@ -180,42 +173,61 @@ print("\nEVENT SELECTION")
 print("Active SNN features :", int(active.item()))
 print("Selected features   :", selected_values.shape)
 
+quantized_values, scale = quantize_events(
+    selected_values
+)
 
-# -------------------------
-# Transmission
-# -------------------------
+print("\nQUANTISATION")
+print("Precision           :", f"INT{QUANTIZATION_BITS}")
+print("Scale               :", scale.item())
+print("Quantized dtype     :", quantized_values.dtype)
 
-original_values = snn_features.numel()
 
-transmitted_values = selected_values.numel()
+original_bits = (
+    snn_features.numel() * 32
+)
 
-reduction = (
+transmitted_bits = (
+    quantized_values.numel()
+    * QUANTIZATION_BITS
+)
+
+bit_reduction = (
     1 -
-    transmitted_values / original_values
+    transmitted_bits / original_bits
+) * 100
+
+feature_reduction = (
+    1 -
+    selected_values.numel() /
+    snn_features.numel()
 ) * 100
 
 print("\nTRANSMISSION")
-print("Original values :", original_values)
-print("Sent values     :", transmitted_values)
-print(f"Value reduction : {reduction:.2f}%")
+print("Original values     :", snn_features.numel())
+print("Selected values     :", selected_values.numel())
+print("Feature reduction   :", f"{feature_reduction:.2f}%")
+print("Original bits       :", original_bits)
+print("Transmitted bits    :", transmitted_bits)
+print("Bit reduction      :", f"{bit_reduction:.2f}%")
 
 
-# -------------------------
-# Server reconstruction
-# -------------------------
-
-reconstructed = reconstruct_features(
-    selected_values,
-    selected_indices
+dequantized_values = dequantize_events(
+    quantized_values,
+    scale
 )
 
 print("\nSERVER")
-print("Reconstructed shape:", reconstructed.shape)
+print("Dequantized values  :", dequantized_values.shape)
 
 
-# -------------------------
-# ANN prediction
-# -------------------------
+reconstructed = reconstruct_features(
+    dequantized_values,
+    selected_indices
+)
+
+print("Reconstructed shape :", reconstructed.shape)
+
 
 prediction, output = server_ann(
     reconstructed
@@ -227,18 +239,18 @@ predicted_label = prediction.item()
 print("\nCLASSIFICATION")
 
 print(
-    "True label:",
+    "True label          :",
     "LEFT" if true_label == 0 else "RIGHT"
 )
 
 print(
-    "Predicted:",
+    "Predicted label     :",
     "LEFT" if predicted_label == 0 else "RIGHT"
 )
 
 print(
-    "ANN output:",
+    "ANN output          :",
     output
 )
 
-print("=" * 70)
+print("=" * 75)
