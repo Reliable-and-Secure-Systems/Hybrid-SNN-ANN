@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .DS_Store
 ATM/
+# DSE generated outputs
+models/dse_model.pt
+results/
