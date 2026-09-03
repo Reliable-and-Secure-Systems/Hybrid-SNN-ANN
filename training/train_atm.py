@@ -203,7 +203,7 @@ for epoch in range(EPOCHS):
 
         optimizer.zero_grad()
 
-        output, snn_features, spikes = model(
+        output, snn_features, spikes, ann_hidden = model(
             batch_x
         )
 
@@ -260,7 +260,7 @@ with torch.no_grad():
 
         batch_x = batch_x.permute(1, 0, 2)
 
-        output, _, _ = model(
+        output, _, _, _ = model(
             batch_x
         )
 

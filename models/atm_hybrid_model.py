@@ -33,10 +33,16 @@ class ATMHybridSNNANN(nn.Module):
         )
 
         # ANN part
-        self.ann = nn.Sequential(
-            nn.Linear(hidden_size, 64),
-            nn.ReLU(),
-            nn.Linear(64, num_classes)
+        self.ann_fc1 = nn.Linear(
+            hidden_size,
+            64
+        )
+
+        self.ann_relu = nn.ReLU()
+
+        self.ann_fc2 = nn.Linear(
+            64,
+            num_classes
         )
 
     def forward(self, x):
@@ -67,7 +73,12 @@ class ATMHybridSNNANN(nn.Module):
         # Average firing activity
         snn_features = spikes.mean(dim=0)
 
-        # ANN classification
-        output = self.ann(snn_features)
+        # First ANN stage
+        ann_hidden = self.ann_relu(
+            self.ann_fc1(snn_features)
+        )
 
-        return output, snn_features, spikes
+        # Final ANN classifier
+        output = self.ann_fc2(ann_hidden)
+
+        return output, snn_features, spikes, ann_hidden
