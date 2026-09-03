@@ -6,17 +6,29 @@ from snntorch import surrogate
 
 class ATMHybridSNNANN(nn.Module):
 
-    def __init__(self, input_size=4624, hidden_size=128, num_classes=2):
+    def __init__(
+        self,
+        input_size=4624,
+        hidden_size=128,
+        num_classes=2,
+        beta=0.9
+    ):
 
         super().__init__()
 
         spike_grad = surrogate.fast_sigmoid()
 
+        # Store configuration for experiment tracking
+        self.beta = beta
+
         # SNN part
-        self.snn_fc = nn.Linear(input_size, hidden_size)
+        self.snn_fc = nn.Linear(
+            input_size,
+            hidden_size
+        )
 
         self.snn_neuron = snn.Leaky(
-            beta=0.9,
+            beta=beta,
             spike_grad=spike_grad
         )
 

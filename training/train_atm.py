@@ -11,10 +11,6 @@ from encoding.atm_encoder import encode_atm_sample
 from models.atm_hybrid_model import ATMHybridSNNANN
 
 
-# ============================================================
-# EXPERIMENT CONFIGURATION
-# ============================================================
-
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
@@ -22,10 +18,16 @@ parser.add_argument(
     type=int,
     default=20
 )
+parser.add_argument(
+    "--beta",
+    type=float,
+    default=0.9
+)
 
 args = parser.parse_args()
 
 TIME_STEPS = args.time_steps
+BETA = args.beta
 
 BATCH_SIZE = 16
 EPOCHS = 20
@@ -45,11 +47,6 @@ DEVICE = torch.device(
 
 print("Device:", DEVICE)
 
-
-# ============================================================
-# LOAD REAL ATM DATA
-# ============================================================
-
 X, y = load_atm_dataset()
 
 print()
@@ -61,11 +58,6 @@ print("Data shape   :", X.shape)
 print("Labels shape :", y.shape)
 print("LEFT samples :", int(np.sum(y == 0)))
 print("RIGHT samples:", int(np.sum(y == 1)))
-
-
-# ============================================================
-# TRAIN / TEST SPLIT
-# ============================================================
 
 train_x_raw, test_x_raw, train_y, test_y = train_test_split(
     X,
@@ -91,10 +83,6 @@ print(
     int(np.sum(test_y == 1))
 )
 
-
-# ============================================================
-# ENCODE DATA
-# ============================================================
 
 print()
 print("=" * 60)
@@ -150,10 +138,6 @@ print("Training encoded shape:", train_encoded.shape)
 print("Testing encoded shape :", test_encoded.shape)
 
 
-# ============================================================
-# DATA LOADERS
-# ============================================================
-
 train_dataset = TensorDataset(
     train_encoded,
     train_labels
@@ -177,14 +161,12 @@ test_loader = DataLoader(
 )
 
 
-# ============================================================
-# MODEL
-# ============================================================
 
 model = ATMHybridSNNANN(
     input_size=INPUT_SIZE,
     hidden_size=HIDDEN_SIZE,
-    num_classes=NUM_CLASSES
+    num_classes=NUM_CLASSES,
+    beta=BETA
 )
 
 model = model.to(DEVICE)
@@ -197,10 +179,6 @@ optimizer = torch.optim.Adam(
     lr=LEARNING_RATE
 )
 
-
-# ============================================================
-# TRAINING
-# ============================================================
 
 print()
 print("=" * 60)
@@ -220,9 +198,6 @@ for epoch in range(EPOCHS):
         batch_x = batch_x.to(DEVICE)
         batch_y = batch_y.to(DEVICE)
 
-        # batch × time × features
-        # →
-        # time × batch × features
 
         batch_x = batch_x.permute(1, 0, 2)
 
@@ -265,10 +240,6 @@ for epoch in range(EPOCHS):
         f"Train Accuracy: {train_accuracy:.2f}%"
     )
 
-
-# ============================================================
-# TESTING
-# ============================================================
 
 print()
 print("=" * 60)
@@ -317,10 +288,6 @@ print(
 print("=" * 60)
 
 
-# ============================================================
-# SAVE MODEL
-# ============================================================
-
 torch.save(
     model.state_dict(),
     "models/atm_hybrid_trained.pt"
@@ -329,3 +296,5 @@ torch.save(
 print()
 print("Model saved to:")
 print("models/atm_hybrid_trained.pt")
+print("Time steps   :", TIME_STEPS)
+print("SNN beta     :", BETA)
