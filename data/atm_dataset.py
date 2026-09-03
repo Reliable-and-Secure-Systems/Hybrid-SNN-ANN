@@ -5,60 +5,64 @@ import numpy as np
 import pandas as pd
 
 
-# Location of the cloned ATM repository
-ATM_ROOT = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "ATM"
-)
-
-DATA_PATH = os.path.join(
-    ATM_ROOT,
-    "S01_Sess02",
-    "atm_eeg",
-    "dSPM",
-    "full_window",
-    "broadband",
-    "csv"
+# Extracted ATM dataset
+ATM_ROOT = os.path.expanduser(
+    "~/ATM-data/ATM-main"
 )
 
 
 def load_atm_dataset():
 
-    left_files = glob.glob(
-        os.path.join(
-            DATA_PATH,
-            "MOTOR_IMAGERY-LEFT_trial_*_atm.csv"
-        )
+    pattern = os.path.join(
+        ATM_ROOT,
+        "*",
+        "ATM_EEG",
+        "source_space",
+        "full_window",
+        "dSPM",
+        "broadband",
+        "csv",
+        "MOTOR_IMAGERY-*_trial_*_atm.csv"
     )
 
-    right_files = glob.glob(
-        os.path.join(
-            DATA_PATH,
-            "MOTOR_IMAGERY-RIGHT_trial_*_atm.csv"
-        )
-    )
+    files = glob.glob(pattern)
 
-    files = left_files + right_files
+    left_files = [
+        f for f in files
+        if "MOTOR_IMAGERY-LEFT" in os.path.basename(f)
+    ]
 
-    files.sort()
+    right_files = [
+        f for f in files
+        if "MOTOR_IMAGERY-RIGHT" in os.path.basename(f)
+    ]
+
+    left_files.sort()
+    right_files.sort()
+
+    print("LEFT files found :", len(left_files))
+    print("RIGHT files found:", len(right_files))
 
     data = []
     labels = []
 
-    for file in files:
+    files_with_labels = (
+        [(f, 0) for f in left_files]
+        + [(f, 1) for f in right_files]
+    )
+
+    files_with_labels.sort()
+
+    for index, (file, label) in enumerate(files_with_labels):
 
         df = pd.read_csv(file)
 
-        # Remove the first column containing parcel names
+        # Remove the first column containing parcel names.
+        # Remaining values form the 68 x 68 ATM matrix.
         values = df.iloc[:, 1:].values.astype(np.float32)
 
         data.append(values)
-
-        if "MOTOR_IMAGERY-LEFT" in file:
-            labels.append(0)
-
-        elif "MOTOR_IMAGERY-RIGHT" in file:
-            labels.append(1)
+        labels.append(label)
 
     X = np.array(data, dtype=np.float32)
     y = np.array(labels, dtype=np.int64)
