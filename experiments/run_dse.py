@@ -20,12 +20,24 @@ from split_computing.quantization import (
 # Configuration
 # ============================================================
 
+import argparse
+
+parser = argparse.ArgumentParser(
+    description="Run SNN-ANN design space exploration"
+)
+
+parser.add_argument("--time-steps", type=int, default=10)
+parser.add_argument("--beta", type=float, default=0.8)
+parser.add_argument("--epochs", type=int, default=20)
+
+args = parser.parse_args()
+
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
 BATCH_SIZE = 16
-EPOCHS = 20
+EPOCHS = args.epochs
 LEARNING_RATE = 0.001
 
 TEST_SIZE = 0.2
@@ -35,8 +47,8 @@ INPUT_SIZE = 68 * 68
 HIDDEN_SIZE = 128
 NUM_CLASSES = 2
 
-TIME_STEPS = 10
-BETA = 0.8
+TIME_STEPS = args.time_steps
+BETA = args.beta
 
 SPLIT_POINTS = [
     "snn_output",
@@ -61,7 +73,7 @@ QUANTIZATION_BITS = [
 ]
 
 MODEL_PATH = "models/dse_model.pt"
-RESULT_PATH = "results/design_space_results.csv"
+RESULT_PATH = f"results/dse_T{TIME_STEPS}_B{BETA}.csv"
 
 
 # ============================================================
