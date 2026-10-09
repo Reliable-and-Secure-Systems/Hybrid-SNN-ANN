@@ -6,3 +6,5 @@ ATM/
 # DSE generated outputs
 models/dse_model.pt
 results/
+
+data/atm_diagnostic_eeg/
